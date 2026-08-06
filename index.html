@@ -830,7 +830,8 @@
     }
 
     function tracingIsLocked() {
-      return cycleTraceComplete || (completed.has(letter()) && cycle===REQUIRED_CYCLES);
+      // A saved completion mark records progress; it must never disable practice.
+      return cycleTraceComplete;
     }
 
     function startTrace(input,id) {
