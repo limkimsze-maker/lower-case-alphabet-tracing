@@ -83,6 +83,16 @@
     button:hover { filter: brightness(1.08); }
     button:disabled { opacity: .45; cursor: not-allowed; }
     .danger { background: #b91c1c; }
+    #resetBtn {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: transform .15s ease, background-color .15s ease;
+    }
+    #resetBtn.reset-holding {
+      background: #7f1d1d;
+      transform: scale(.97);
+    }
     .primary { background: var(--blue); }
     .sound { background: #7c3aed; }
 
@@ -241,7 +251,7 @@
       <div class="brand">Lowercase Alphabet Tracing</div>
       <div class="topbar">
         <div class="score">Completed: <strong id="score">0</strong>/26</div>
-        <button class="danger" id="resetBtn" title="Hold for 2 seconds to reset all progress">Hold to Reset</button>
+        <button class="danger" id="resetBtn" title="Hold for 3 seconds to reset all progress">Hold 3s to Reset</button>
       </div>
     </header>
 
@@ -919,16 +929,75 @@
     });
 
     let resetTimer=null;
+    let resetCountdown=null;
+    let resetPointer=null;
     const resetBtn=document.getElementById('resetBtn');
-    function startReset(){ resetTimer=setTimeout(()=>{
-      completed.clear(); currentIndex=0; cycle=1;
-      try { localStorage.removeItem(STORAGE_KEY); } catch {}
-      try { if (typeof storeState==='function') storeState({score:0}); } catch {}
-      beginLetter(0); setMessage('All progress has been reset.'); resetTimer=null;
-    },2000); }
-    function cancelReset(){ if(resetTimer){clearTimeout(resetTimer);resetTimer=null;} }
-    resetBtn.addEventListener('pointerdown',startReset);
-    ['pointerup','pointerleave','pointercancel'].forEach(name=>resetBtn.addEventListener(name,cancelReset));
+    const RESET_HOLD_MS=3000;
+    const RESET_LABEL='Hold 3s to Reset';
+
+    function cancelResetHold() {
+      if (resetTimer) clearTimeout(resetTimer);
+      if (resetCountdown) clearInterval(resetCountdown);
+      resetTimer=null; resetCountdown=null; resetPointer=null;
+      resetBtn.classList.remove('reset-holding');
+      resetBtn.textContent=RESET_LABEL;
+    }
+
+    function beginResetHold() {
+      if (resetTimer) return;
+      let seconds=3;
+      resetBtn.classList.add('reset-holding');
+      resetBtn.textContent=`Keep holding… ${seconds}`;
+      resetCountdown=setInterval(()=>{
+        seconds--;
+        if (seconds>0) resetBtn.textContent=`Keep holding… ${seconds}`;
+      },1000);
+      resetTimer=setTimeout(()=>{
+        clearInterval(resetCountdown);
+        resetTimer=null; resetCountdown=null;
+        resetBtn.classList.remove('reset-holding');
+        resetBtn.textContent=RESET_LABEL;
+        completed.clear(); currentIndex=0; cycle=1;
+        try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        try { if (typeof storeState==='function') storeState({score:0}); } catch {}
+        beginLetter(0);
+        setMessage('All progress has been reset.',true);
+      },RESET_HOLD_MS);
+    }
+
+    if ('PointerEvent' in window) {
+      resetBtn.addEventListener('pointerdown',event=>{
+        if (event.isPrimary===false || (event.pointerType==='mouse' && event.button!==0)) return;
+        event.preventDefault();
+        resetPointer=event.pointerId;
+        try { resetBtn.setPointerCapture(event.pointerId); } catch {}
+        beginResetHold();
+      },{passive:false});
+      resetBtn.addEventListener('pointerup',event=>{
+        if (resetPointer!==event.pointerId) return;
+        event.preventDefault();
+        cancelResetHold();
+        try {
+          if (resetBtn.hasPointerCapture?.(event.pointerId)) resetBtn.releasePointerCapture(event.pointerId);
+        } catch {}
+      },{passive:false});
+      resetBtn.addEventListener('pointercancel',cancelResetHold);
+    } else {
+      resetBtn.addEventListener('touchstart',event=>{
+        event.preventDefault(); beginResetHold();
+      },{passive:false});
+      resetBtn.addEventListener('touchend',cancelResetHold);
+      resetBtn.addEventListener('touchcancel',cancelResetHold);
+      resetBtn.addEventListener('mousedown',event=>{
+        if (event.button!==0) return;
+        event.preventDefault(); beginResetHold();
+      });
+      window.addEventListener('mouseup',cancelResetHold);
+    }
+    window.addEventListener('blur',cancelResetHold);
+    document.addEventListener('visibilitychange',()=>{
+      if (document.hidden) cancelResetHold();
+    });
 
     function buildAlphabet() {
       LETTERS.forEach((l,index)=>{
